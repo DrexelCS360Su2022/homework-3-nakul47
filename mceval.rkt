@@ -23,6 +23,11 @@
         ((assignment? exp) (eval-assignment exp env))
         ((definition? exp) (eval-definition exp env))
         ((if? exp) (eval-if exp env))
+        ((and? exp) (eval-and exp env))
+        ((or? exp) (eval-or exp env))
+        ((let? exp) (eval-let exp env))
+        ((delay? exp) (eval-delay exp env))
+        ((force? exp) (eval-force exp env))
         ((lambda? exp)
          (make-procedure (lambda-parameters exp)
                          (lambda-body exp)
@@ -56,6 +61,58 @@
       '()
       (cons (mceval (first-operand exps) env)
             (list-of-values (rest-operands exps) env))))
+
+(define (eval-and exp env)
+  (cond
+    ((null? (and-arguments exp)) #t)
+    ((false? (mceval (first (and-arguments exp)) env)) #f)
+    
+    ((true? (mceval(first (and-arguments exp)) env)) (if (= (length (and-arguments exp)) 1)
+                                                         (if (eq? #t (car (and-arguments exp)))
+                                                             #t
+                                                             (mceval (car (and-arguments exp)) env)
+                                                             )
+                                                         (mceval (cons (quote and) (rest (and-arguments exp))) env)) 
+                                                         )
+      )
+  )
+
+(define (eval-or exp env)
+  (cond
+    ((null? (operands exp)) #f)
+    ((true? (mceval (first (operands exp)) env)) #t)
+    ((false? (mceval (first (operands exp)) env)) (if (= (length (operands exp)) 1)
+                                                         (if (eq? #t (car (operands exp)))
+                                                             #t
+                                                             (mceval (car (operands exp)) env)
+                                                             )
+                                                         (mceval (cons (quote or) (rest (operands exp))) env)) 
+                                                         )
+    )
+  )
+
+(define (eval-let exp env)
+  (eval-sequence (let-body exp) (extend-environment (let-vars exp) (list-of-values (let-values exp) env) env))
+  )
+
+(define (let-vars exp)
+  (map car (cadr exp))
+  )
+
+(define (let-values exp)
+  (map cadr (cadr exp))
+  )
+  
+
+(define (let-body exp) (cddr exp))
+
+(define (eval-delay exp env)
+  (lambda () (mceval exp env))
+  )
+
+(define (eval-force exp env)
+  (exp)
+  )
 
 (define (eval-if exp env)
   (if (true? (mceval (if-predicate exp) env))
@@ -130,6 +187,21 @@
 (define (make-lambda parameters body)
   (cons 'lambda (cons parameters body)))
 
+(define (and? exp) (tagged-list? exp 'and))
+
+(define (and-arguments exp) (operands exp))
+
+(define (or? exp) (tagged-list? exp 'or))
+
+(define (let? exp) (tagged-list? exp 'let))
+
+(define (delay? exp) (tagged-list? exp 'delay))
+
+(define (force? exp) (tagged-list? exp 'force))
+
+(define (rest-and-args exp)
+  (string-append "(and" (list->string (rest (and-arguments exp))) ")")
+  )
 
 (define (if? exp) (tagged-list? exp 'if))
 
@@ -293,7 +365,16 @@
                              the-empty-environment)))
     (define-variable! 'true true initial-env)
     (define-variable! 'false false initial-env)
-    initial-env))
+    (eval-definition '(define (and x)
+                        (cond
+                          [(eq? (first x) #f) #f]
+                          [(null? x) #t]
+                          [(eq? (first x) #t) (and (rest x))]
+                          [else x])
+                            )
+                     initial-env)
+    initial-env)
+  )
 
 (define (primitive-procedure? proc)
   (tagged-list? proc 'primitive))
@@ -305,6 +386,16 @@
         (list 'cdr cdr)
         (list 'cons cons)
         (list 'null? null?)
+        (list '+ +)
+        (list '- -)
+        (list '* *)
+        (list '/ /)
+        (list '< <)
+        (list '<= <=)
+        (list '= =)
+        (list '>= >=)
+        (list '> >)
+        (list 'error (lambda () (error "Metacircular Interpreter Aborted")))
 ;;      more primitives
         ))
 
